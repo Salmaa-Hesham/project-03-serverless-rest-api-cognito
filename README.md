@@ -37,68 +37,7 @@ This solution implements a secure API pattern:
 
 ![Serverless REST API Architecture Diagram](architecture.png)
 
-<details>
-<summary>Click to view Mermaid diagram markup</summary>
 
-```mermaid
-flowchart TD
-    subgraph Clients ["Client Layer"]
-        Browser["Single Page App (React/Vue)\nHosted on S3 + CloudFront"]
-        Mobile["Mobile Native Client"]
-    end
-
-    subgraph SecurityAuth ["Identity & Perimeter Security"]
-        Cognito["Amazon Cognito User Pool\n(Hosted UI / JWT Issuance)"]
-        WAF["AWS WAF WebACL\n- Rate Limit: 300 req / 5 min\n- AWSManagedRulesCommon\n- Geo-Match Filtering"]
-    end
-
-    subgraph EdgeAPI ["Edge Delivery & API Gateway"]
-        CF["Amazon CloudFront CDN\n(Edge SSL & Compression)"]
-        APIGW["Amazon API Gateway (REST API)\n- Cognito JWT Authorizer\n- Stage Cache: TTL 300s\n- Usage Plan & Throttling"]
-    end
-
-    subgraph ServerlessCompute ["Compute & Business Logic"]
-        AuthFunc["Cognito Authorizer Engine\n(Built-in API GW)"]
-        CRUDLambda["AWS Lambda: CRUD Handlers\n- GET /tasks (Cached)\n- POST /tasks\n- PUT /tasks/{id}\n- DELETE /tasks/{id}\n- Active X-Ray Tracing"]
-        AuditLambda["AWS Lambda: Audit Stream Handler\n(Triggered by DynamoDB Streams)"]
-    end
-
-    subgraph DatabaseTier ["Persistence & Analytics"]
-        DDB[("Amazon DynamoDB\n(Single-Table Design)\nPK: USER#<id>, SK: TASK#<id>\nGSI-1: StatusIndex")]
-        DDBStream["DynamoDB Streams\n(NEW_AND_OLD_IMAGES)"]
-        S3Audit[("S3 Audit Bucket\n(Compliance Logs)")]
-    end
-
-    subgraph Observability ["Observability Tier"]
-        XRay["AWS X-Ray Service Graph\n(Trace Segment Propagation)"]
-        CWLogs["CloudWatch Logs & Metrics"]
-    end
-
-    %% Auth Flow
-    Browser & Mobile -->|1. Authenticate (OAuth2)| Cognito
-    Cognito -->|2. Return JWT IdToken + AccessToken| Browser
-
-    %% API Invocations
-    Browser -->|3. HTTPS Request + Bearer JWT| CF
-    CF -->|4. Inspect Headers & Rate| WAF
-    WAF -->|5. Forward Allowed Requests| APIGW
-    APIGW -->|6. Validate JWT Claims| AuthFunc
-    APIGW -->|7. Invoke Lambda (Cache Miss)| CRUDLambda
-    APIGW -.->|Cache Hit (300s TTL)| CF
-
-    %% Compute to DB
-    CRUDLambda -->|8. Read/Write Document| DDB
-    DDB -->|9. Stream Mutation Events| DDBStream
-    DDBStream -->|10. Trigger Async Audit| AuditLambda
-    AuditLambda -->|11. Archive JSON Record| S3Audit
-
-    %% Tracing
-    CRUDLambda -.->|Emit Subsegments| XRay
-    CRUDLambda -.->|Structured JSON Logs| CWLogs
-```
-</details>
-
-> **Note**: A vector format source file (`architecture.drawio`) is included in this directory. You can open and edit it in [draw.io](https://app.diagrams.net/) or [Lucidchart](https://lucid.app/).
 
 ---
 
